@@ -73,7 +73,6 @@ My individual contributions include:
 - data cleaning implementation  
 - Full exploratory data analysis  
 - Implementation and documentation of statistical modeling
-- part of ML
 - Scientific writing: introduction, biological background, methods (excluding ML section), results, discussion, and conclusion  
 
 Other team members contributed to cohort construction, missing data analysis, and machine learning extensions.
