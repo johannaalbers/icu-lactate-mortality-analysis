@@ -1,0 +1,2695 @@
+---
+title: 'Are elevated lactate levels associated with ICU mortality?'
+author: "..."
+date: "January, 2025"
+output:
+  pdf_document: 
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    fig_width: 7
+    fig_height: 5
+    fig_caption: true
+    keep_tex: false
+    latex_engine: xelatex
+    highlight: tango
+    citation_package: natbib
+header-includes:
+- \usepackage{xcolor}
+- \usepackage{framed}
+- \usepackage{listings}
+- \usepackage{fancyhdr}
+- \usepackage{geometry}
+- \usepackage{caption}
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{wrapfig}
+- \usepackage{float}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{graphicx}
+- \geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+- \pagestyle{fancy}
+- \fancyfoot[C]{\thepage}
+- \renewcommand{\headrulewidth}{0.4pt}
+- \renewcommand{\footrulewidth}{0.4pt}
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+\newpage
+
+Authors' information
+
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Nombre} & Johanna Ursula Albers \\
+\hline
+\textbf{Email} & johanna.albers@estudiants.urv.cat\\
+\hline
+\textbf{GitHub} & https://github.com/ \\
+\hline
+\textbf{LinkedIn} & https://www.linkedin.com/in/ \\
+\hline
+\textbf{Fecha} & \today \\
+\hline
+\end{tabular}
+\end{center}
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Nombre} & Marco Russo \\
+\hline
+\textbf{Email} & mrussorb@uoc.edu \\
+\hline
+\textbf{GitHub} & https://github.com/marcusRB/ \\
+\hline
+\textbf{LinkedIn} & https://www.linkedin.com/in/marcusrb/ \\
+\hline
+\textbf{Fecha} & \today \\
+\hline
+\end{tabular}
+\end{center}
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Nombre} & Noa-Sibila Janer Oliver \\
+\hline
+\textbf{Email} & noa-sibila.janer@estudiants.urv.cat \\
+\hline
+\textbf{GitHub} & https://github.com/ \\
+\hline
+\textbf{LinkedIn} & https://www.linkedin.com/in/ \\
+\hline
+\textbf{Fecha} & \today \\
+\hline
+\end{tabular}
+\end{center}
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, 
+                      fig.width = 10, fig.height = 6)
+```
+
+# Project overview
+
+**Research Question**: Are elevated lactate levels associated with ICU
+mortality? Study Design: Retrospective cohort study using MIMIC-III
+database Primary Analysis: Association between first lactate measurement
+post-ICU admission and in-hospital mortality.
+
+## Data Description
+
+MIMIC-III is a relational database consisting of 26 tables. Tables are
+linked by identifiers which usually have the suffix ‘ID’. For example,
+SUBJECT_ID refers to a unique patient, HADM_ID refers to a unique
+admission to the hospital, and ICUSTAY_ID refers to a unique admission
+to an intensive care unit.
+
+Charted events such as notes, laboratory tests, and fluid balance are
+stored in a series of ‘events’ tables. For example the OUTPUTEVENTS
+table contains all measurements related to output for a given patient,
+while the LABEVENTS table contains laboratory test results for a
+patient.
+
+Tables prefixed with ‘D\_’ are dictionary tables and provide definitions
+for identifiers. For example, every row of CHARTEVENTS is associated
+with a single ITEMID which represents the concept measured, but it does
+not contain the actual name of the measurement. By joining CHARTEVENTS
+and D_ITEMS on ITEMID, it is possible to identify the concept
+represented by a given ITEMID.
+
+Developing the MIMIC data model involved balancing simplicity of
+interpretation against closeness to ground truth. As such, the model is
+a reflection of underlying data sources, modified over iterations of the
+MIMIC database in response to user feedback. Care has been taken to
+avoid making assumptions about the underlying data when carrying out
+transformations, so MIMIC-III closely represents the raw hospital data.
+
+Broadly speaking, five tables are used to define and track patient
+stays: ADMISSIONS; PATIENTS; ICUSTAYS; SERVICES; and TRANSFERS. Another
+five tables are dictionaries for cross-referencing codes against their
+respective definitions: D_CPT; D_ICD_DIAGNOSES; D_ICD_PROCEDURES;
+D_ITEMS; and D_LABITEMS. The remaining tables contain data associated
+with patient care, such as physiological measurements, caregiver
+observations, and billing information.
+
+In some cases it would be possible to merge tables—for example, the
+D_ICD_PROCEDURES and CPTEVENTS tables both contain detail relating to
+procedures and could be combined—but our approach is to keep the tables
+independent for clarity, since the data sources are significantly
+different. Rather than combining the tables within MIMIC data model, we
+suggest researchers develop database views and transforms as
+appropriate.
+
+## MIMIC-III v1.4
+
+The current version of the database is v1.4. When referencing this
+version, we recommend using the full title: MIMIC-III v1.4[^1].
+
+[^1]: Johnson, A., Pollard, T., & Mark, R. (2016). MIMIC-III Clinical
+    Database (version 1.4). PhysioNet. RRID:SCR_007345.
+    <https://doi.org/10.13026/C2XW26>
+
+MIMIC-III v1.4 was released on 2 September 2016. It was a major release
+enhancing data quality and providing a large amount of additional data
+for Metavision patients.
+
+***
+
+\newpage
+
+# Data Extraction & Preparation
+
+## Database setup, cohort extraction
+
+```{r database setup, include=FALSE}
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("tidyr")) install.packages("tidyr")
+if (!require("dplyr")) install.packages("dplyr")
+if (!require("tibble")) install.packages("tibble"())
+if (!require("lubridate")) install.packages("lubridate")
+if (!require("readr")) install.packages("readr")
+if (!require("stringr")) install.packages("stringr")
+if (!require("ggplot2")) install.packages("ggplot2")
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(lubridate)
+library(readr)
+library(stringr)
+library(ggplot2)
+
+if (!require("data.table")) install.packages("data.table")
+if (!require("odbc")) install.packages("odbc")
+if (!require("RMariaDB")) install.packages("RMariaDB")
+if (!require("broom")) install.packages("broom")
+if (!require("DescTools")) install.packages("DescTools")
+if (!require("boot")) install.packages("boot")
+if (!require("effsize")) install.packages("effsize")
+library(data.table)
+library(odbc)
+library(RMariaDB)
+library(tidyverse)
+library(broom)
+library(DescTools)
+library(boot)
+library(effsize)
+
+if (!require("cluster")) install.packages("cluster")
+if (!require("factoextra")) install.packages("factoextra")
+if (!require("NbClust")) install.packages("NbClust")
+if (!require("dbscan")) install.packages("dbscan")
+if (!require("mclust")) install.packages("mclust")
+library(cluster)
+library(factoextra)
+library(NbClust)
+library(dbscan)
+library(mclust)
+
+if (!require("caret")) install.packages("caret")
+if (!require("C50")) install.packages("C50")
+if (!require("randomForest")) install.packages("randomForest")
+if (!require("lightgbm")) install.packages("lightgbm")
+if (!require("pROC")) install.packages("pROC")
+if (!require("DALEX")) install.packages("DALEX")
+if (!require("DALEXtra")) install.packages("DALEXtra")
+if (!require("shapviz")) install.packages("shapviz")
+if (!require("kernelshap")) install.packages("kernelshap")
+
+library(caret)
+library(C50)
+library(randomForest)
+library(lightgbm)
+library(pROC)
+library(DALEX)
+library(DALEXtra)
+library(shapviz)
+library(kernelshap)
+```
+
+
+```{r}
+# Creating the main directories
+if (!dir.exists("../figures")) {
+dir.create("../figures", recursive = TRUE)
+}
+
+if (!dir.exists("../results")) {
+dir.create("../results", recursive = TRUE)
+}
+
+```
+
+
+
+```{r include=FALSE}
+# Get the credentials file
+# It looks like:
+################
+#username=your.user.name
+#password=your.password.assigned
+################
+creds_file = "creds.txt"
+```
+
+
+```{r include=FALSE}
+# Set the username and password
+creds <- readLines(creds_file)
+cred_list <- setNames(
+  sub(".*=", "", creds),
+  sub("=.*", "", creds)
+)
+```
+
+```{r include=FALSE}
+con <- dbConnect(
+  drv = RMariaDB::MariaDB(),
+  username = cred_list[["username"]],
+  password = cred_list[["password"]],
+  host = "ehr3.deim.urv.cat",
+  dbname = "mimiciiiv14",
+  port = 3306
+)
+```
+
+```{r, results='hide'}
+#| echo: false
+dbListTables(con)
+```
+
+We constructed a cohort at the level of individual ICU stays. Each row
+in the dataset corresponds to a single ICU stay. The most important
+measurement, the first lactate measurement after the ICU admission is
+included.
+
+Lactate measurements were assigned to ICU stays based on their
+timestamp: a measurement was linked to an ICU stay only if it occurred
+between the ICU admission (intime) and 24h after.
+
+ICU mortality was derived from hospital admission outcomes. For patients
+with multiple ICU stays within the same hospital admission, ICU
+mortality was assigned exclusively to the final ICU stay if the patient
+died during that admission; all preceding ICU stays were labeled as
+non-fatal. This approach allows ICU-level mortality attribution in the
+absence of a direct ICU death indicator. The final cohort comprised
+129,966 lactate measurements, representing multiple ICU stays and
+hospital admissions across patients.
+
+Further confounding variables are also included: age, gender, creatine
+kinase, bilirubin and mean arterial blood pressure (map). The inlcuded
+measurements are the first measurements in the first 24 h after the ICU
+admission.
+
+```{r include=FALSE}
+library(DBI)
+dbExecute(con, "SET SQL_BIG_SELECTS=1;")
+```
+
+```{r include=FALSE}
+cohort_query <- "
+        WITH icu_ordered AS (
+        SELECT
+            i.subject_id,
+            i.hadm_id,
+            i.icustay_id,
+            i.intime,
+            i.outtime,
+            a.hospital_expire_flag AS hospital_dead,
+            ROW_NUMBER() OVER (
+                PARTITION BY i.subject_id, i.hadm_id
+                ORDER BY i.outtime DESC
+            ) AS rn_icu
+        FROM ICUSTAYS i
+        JOIN ADMISSIONS a
+            ON i.hadm_id = a.hadm_id
+    ),
+    lactate_first AS (
+        SELECT
+            io.subject_id,
+            io.hadm_id,
+            io.icustay_id,
+            l.charttime as lactate_time,
+            l.value as lactate_value,
+            l.valuenum as lactate_value_num,
+            l.valueuom as lactate_units,
+            l.flag as lactate_flag,
+            ROW_NUMBER() OVER (
+                PARTITION BY io.icustay_id
+                ORDER BY l.charttime ASC
+            ) AS rn
+        FROM LABEVENTS l
+        INNER JOIN icu_ordered io USING(subject_id, hadm_id)
+        WHERE l.itemid = 50813
+          AND l.value IS NOT NULL
+          AND l.charttime BETWEEN io.intime AND (io.intime + INTERVAL '24' HOUR)
+    ),
+    ck_first AS (
+        SELECT
+            io.subject_id,
+            io.hadm_id,
+            io.icustay_id,
+            l.charttime as ck_time,
+            l.value as ck_value,
+            l.valuenum as ck_value_num,
+            l.valueuom as ck_units,
+            l.flag as ck_flag,
+            ROW_NUMBER() OVER (
+                PARTITION BY io.icustay_id
+                ORDER BY l.charttime ASC
+            ) AS rn
+        FROM LABEVENTS l
+        INNER JOIN icu_ordered io USING(subject_id, hadm_id)
+        WHERE l.ITEMID = 50910
+          AND l.charttime BETWEEN io.intime AND (io.intime + INTERVAL '24' HOUR)
+    ),
+    bilirubin_first AS (
+        SELECT
+            io.subject_id,
+            io.hadm_id,
+            io.icustay_id,
+            l.charttime as bilirubin_time,
+            l.value as bilirubin_value,
+            l.valuenum as bilirubin_value_num,
+            l.valueuom as bilirubin_units,
+            l.flag as bilirubin_flag,
+            ROW_NUMBER() OVER (
+                PARTITION BY io.icustay_id
+                ORDER BY l.charttime ASC
+            ) AS rn
+        FROM LABEVENTS l
+        INNER JOIN icu_ordered io USING(subject_id, hadm_id)
+        WHERE l.ITEMID = 50885
+          AND l.charttime BETWEEN io.intime AND (io.intime + INTERVAL '24' HOUR)
+    ),
+    mabp_first AS (
+        SELECT
+            io.subject_id,
+            io.hadm_id,
+            io.icustay_id,
+            c.CHARTTIME as mabp_time,
+            c.value as mabp_value,
+            c.valuenum as mabp_value_num,
+            c.valueuom as mabp_units,
+            ROW_NUMBER() OVER (
+                PARTITION BY io.icustay_id
+                ORDER BY c.charttime ASC
+            ) AS rn
+        FROM CHARTEVENTS c
+        INNER JOIN icu_ordered io USING(subject_id, hadm_id, icustay_id)
+        WHERE c.itemid = 220052
+          AND c.valuenum IS NOT NULL
+          AND c.charttime BETWEEN io.intime AND (io.intime + INTERVAL '24' HOUR)
+    ),
+    icu_with_lactate AS (
+        SELECT DISTINCT subject_id, hadm_id, icustay_id
+        FROM lactate_first
+        WHERE rn = 1
+    )
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY iu.subject_id, iu.hadm_id, iu.icustay_id) AS row_id,
+        iu.subject_id,
+        p.dob,
+        YEAR(iu.intime) - YEAR(p.DOB) AS age_icu_entry,
+        YEAR(iu.outtime) - YEAR(p.DOB) AS age_icu_exit,
+        p.gender,
+        iu.hadm_id,
+        iu.icustay_id,
+        iu.intime,
+        iu.outtime,
+        iu.hospital_dead,
+        CASE
+            WHEN iu.hospital_dead = 1 AND iu.rn_icu = 1 THEN 1
+            ELSE 0
+        END AS icu_dead,
+        lf.lactate_time,
+        lf.lactate_value,
+        lf.lactate_value_num,
+        lf.lactate_units,
+        lf.lactate_flag,
+        ck.ck_time,
+        ck.ck_value,
+        ck.ck_value_num,
+        ck.ck_units,
+        ck.ck_flag,
+        bil.bilirubin_time,
+        bil.bilirubin_value,
+        bil.bilirubin_value_num,
+        bil.bilirubin_units,
+        bil.bilirubin_flag,
+        mb.mabp_time,
+        mb.mabp_value,
+        mb.mabp_value_num,
+        mb.mabp_units
+    FROM icu_ordered iu
+    INNER JOIN icu_with_lactate iwl ON iwl.subject_id = iu.subject_id 
+        AND iwl.hadm_id = iu.hadm_id 
+        AND iwl.icustay_id = iu.icustay_id
+    LEFT JOIN lactate_first lf ON lf.subject_id = iu.subject_id 
+        AND lf.hadm_id = iu.hadm_id 
+        AND lf.icustay_id = iu.icustay_id
+        AND lf.rn = 1
+    LEFT JOIN ck_first ck ON ck.subject_id = iu.subject_id 
+        AND ck.hadm_id = iu.hadm_id 
+        AND ck.icustay_id = iu.icustay_id
+        AND ck.rn = 1
+    LEFT JOIN bilirubin_first bil ON bil.subject_id = iu.subject_id 
+        AND bil.hadm_id = iu.hadm_id 
+        AND bil.icustay_id = iu.icustay_id
+        AND bil.rn = 1
+    LEFT JOIN mabp_first mb ON mb.subject_id = iu.subject_id 
+        AND mb.hadm_id = iu.hadm_id 
+        AND mb.icustay_id = iu.icustay_id
+        AND mb.rn = 1
+    LEFT JOIN PATIENTS p ON p.subject_id = iu.subject_id
+    ORDER BY iu.subject_id, iu.hadm_id, iu.icustay_id;
+"
+```
+
+
+```{r}
+initial_df <- dbGetQuery(con, cohort_query) 
+initial_df %>% glimpse()
+```
+
+
+```{r include=FALSE}
+# Disconnect from the database
+dbDisconnect(con)
+```
+
+
+***
+
+## Data cleaning
+
+First we checked the data for duplicated. No duplicates were found.
+
+```{r}
+# Are there duplicates?
+sum(duplicated(initial_df))
+```
+
+Checking the initial dataframe, we saw some null values to analyse if to impute
+or to remove in the next steps.
+
+```{r}
+as.data.frame(initial_df) %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  select(where(~ . > 0))
+```
+
+We only kept observations, which are greater then 0 mmol/L, made sure
+that all lactate values are numeric and checked for suspicious values.
+
+```{r}
+clean_values_df <- initial_df %>%
+  mutate(
+    lactate_value_num = case_when(
+      # For samples containing ">" or "GREATER THAN 30" assign value 31
+      
+      str_detect(lactate_value, fixed(">")) | 
+      str_detect(toupper(lactate_value), "GREATER THAN") ~ 31,
+      
+      TRUE ~ as.numeric(lactate_value) # Convert to numeric value, 
+      # samples with numbers and letters will be converted to NA
+    )
+  ) %>%
+  filter(!is.na(lactate_value_num)) # Delete whole row if lactate value is null
+
+
+# Check for suspicious values
+clean_values_df %>%
+  filter(lactate_value_num <= 0 | lactate_value_num > 31)
+
+```
+
+We verified the logical consistency of mortality indicators by
+confirming that ICU death did not occur in the absence of in-hospital
+death.
+
+```{r}
+clean_values_df %>%
+  filter(icu_dead == 1 & hospital_dead == 0) %>%
+  nrow()
+```
+
+We assessed mortality consistency at the patient level by confirming
+that each subject had at most one recorded ICU death across all ICU
+stays.
+
+```{r}
+death_counts <- clean_values_df %>%
+  group_by(subject_id) %>%
+  summarise(
+    hosp_dead = n_distinct(hadm_id[hospital_dead == 1], na.rm = TRUE),
+    icu_dead  = n_distinct(icustay_id[icu_dead == 1], na.rm = TRUE)
+  ) %>%
+  filter(icu_dead > 1)
+death_counts
+```
+
+A data inconsistency was identified involving a single subject with two
+incorrectly assigned mortality flags; these records were manually
+rectified to ensure data integrity.
+
+```{r}
+clean_values_df <- clean_values_df %>%
+  mutate(
+    # Reassign hospital_dead from first admission
+    hospital_dead = if_else(subject_id == 17796 & hadm_id == 119823, 0, hospital_dead),
+    
+    # Reassign icu_dead from first ICU stay
+    icu_dead = if_else(subject_id == 17796 & hadm_id == 119823, 0, icu_dead)
+  )
+```
+
+For our analysis, we will only need the following columns: `icustay_id`,
+`age_icu_exit`, `gender`, `icu_dead`, `lactate_value_num`, `ck_value_num`,
+`bilirubin_value_num`, `mabp_value_num.` Regarding the age, we chose the
+attribute exiting the ICU, because it is the age of death or survival. These
+columns will be defined in *analysis_df*.
+
+Laboratory abnormality flags were excluded from analysis, as continuous
+laboratory measurements provide greater informational content and allow
+more precise modeling than qualitative classifications.
+
+```{r}
+clean_values_df <- clean_values_df %>%
+  select(
+    icustay_id, age_icu_exit, gender, icu_dead, lactate_value_num, ck_value_num, bilirubin_value_num, mabp_value_num
+  )
+
+head(clean_values_df)
+```
+
+```{r}
+summary(clean_values_df)
+```
+
+After the first step of the data cleaning, reducing the variables in 8 from 31.
+
+Creatine kinase (CK) and bilirubin values were inspected for
+plausibility. Although both variables showed highly skewed distributions
+and substantial missingness, extreme values were considered clinically
+plausible (e.g., severe rhabdomyolysis for CK and advanced liver failure
+for bilirubin). Therefore, no values were removed during data cleaning.
+
+Due to de-identification procedures in MIMIC-III, patients aged 89 years
+or older have artificially shifted dates of birth. Therefore me have a
+maximum of 311 in the column age_icu_exit. Age values exceeding 89 years
+were therefore capped at 90 years for analysis.
+
+```{r}
+clean_values_df <- clean_values_df %>%
+  mutate(
+    age_icu_exit = if_else(age_icu_exit > 89, 90, age_icu_exit)
+  )
+```
+
+Physiologically implausible mean arterial blood pressure values (\<30 or
+\>200 mmHg) were set to missing. 
+
+This will be our final step before the EDA, so we will simplify the name
+of the data frame to `eda_df`.
+
+```{r}
+eda_df <- clean_values_df %>%
+  mutate(
+    mabp_value_num = if_else(
+      mabp_value_num < 30 | mabp_value_num > 200,
+      NA_real_,
+      mabp_value_num
+    )
+  )
+```
+
+***
+
+\newpage
+
+## Exploratory analysis
+
+We start showing the shape and short summary of the dataframe.
+
+```{r}
+dim(eda_df)
+```
+
+```{r}
+summary(eda_df)
+```
+
+The data frame *comprises 22,302 ICU stays*, including lactate
+observations, gender and age, providing a robust longitudinal
+perspective on patient biomarkers.
+
+We describe which patients are in our data set.
+
+```{r}
+table(eda_df$gender)
+table(clean_values_df$icu_dead)
+prop.table(table(clean_values_df$icu_dead))*100
+```
+
+We analyse the distribution of the lactate value.
+
+```{r}
+# Show the distribution of lactate values
+figure_1 <- ggplot(eda_df, aes(lactate_value_num)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") + 
+  labs(title = "Distribution of lactate values") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+figure_1
+```
+
+
+```{r include=FALSE}
+ggsave(
+  filename = "../figures/figure01_distribution_lactate_value.png",
+  plot = figure_1,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+We add a column with the log-transformation of the lactate measurement
+because the values are skewed.
+
+```{r}
+eda_df <- eda_df %>%
+  mutate(
+    log_lactate = log(lactate_value_num)
+  )
+```
+
+
+```{r}
+# Show the distribution of lactate values (log scale)
+figure_2 <- ggplot(eda_df, aes(log_lactate)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") + 
+  labs(title = "Distribution of lactate values (log scale)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+figure_2
+```
+
+```{r}
+ggsave(
+  filename = "../figures/figure02_distribution_lactate_value_log.png",
+  plot = figure_2,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+
+We analyse the distribution of confounding variables.
+
+```{r}
+# Show the distribution of bilirubin values
+figure_3 <- ggplot(eda_df, aes(bilirubin_value_num)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") + 
+  labs(title = "Distribution of creatine bilirubin values") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+figure_3
+```
+
+```{r}
+ggsave(
+  filename = "../figures/figure03_distribution_bilirubin_value.png",
+  plot = figure_3,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+
+```{r}
+# Show the distribution of ck values
+figure_4 <- ggplot(eda_df, aes(ck_value_num)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") + 
+  labs(title = "Distribution of creatine kinase values") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+figure_4
+```
+
+```{r}
+ggsave(
+  filename = "../figures/figure04_distribution_ck_value.png",
+  plot = figure_4,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+
+Although creatine kinase and bilirubin measurements exhibited extreme
+high values, observed concentrations were within clinically plausible
+ranges and were therefore retained. The values exhibited extreme right
+skew and were therefore log-transformed. 0,01 was added to
+bilirubin_value_num in case bilirubin_value_num = 0.
+
+```{r}
+eda_df <- eda_df %>%
+  mutate(
+    log_ck = log(ck_value_num),
+    log_bilirubin = log(bilirubin_value_num + 0.01)
+  )
+```
+
+```{r}
+# Show the distribution of ck values (log scale)
+figure_5 <- ggplot(eda_df, aes(log_ck)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") + 
+  labs(title = "Distribution of ck values (log scale)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+figure_5
+```
+
+```{r}
+ggsave(
+  filename = "../figures/figure05_distribution_ck_value_log.png",
+  plot = figure_5,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+
+```{r}
+# Show the distribution of bilirubin values (log scale)
+figure_6 <- ggplot(eda_df, aes(log_bilirubin)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") + 
+  labs(title = "Distribution of bilirubin values (log scale)") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+figure_6
+```
+
+
+```{r}
+ggsave(
+  filename = "../figures/figure06_distribution_bilirubin_log.png",
+  plot = figure_6,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+
+
+```{r}
+# Show the distribution of mabp values
+figure_7 <- ggplot(eda_df, aes(mabp_value_num)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") + 
+  labs(title = "Distribution of mabp values") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+figure_7
+```
+
+
+
+```{r}
+ggsave(
+  filename = "../figures/figure07_distribution_mabp_values.png",
+  plot = figure_7,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+
+
+We examined the association between log-transformed lactate levels and
+ICU mortality, which constituted the primary relationship of interest.
+
+```{r}
+figure_08 <- ggplot(eda_df, aes(x = factor(icu_dead), y = log_lactate)) +
+  geom_boxplot() +
+  labs(
+    x = "ICU Death",
+    y = "Log(Lactate)"
+  )
+
+figure_08
+```
+
+```{r}
+ggsave(
+  filename = "../figures/figure08_boxplot_icu_death.png",
+  plot = figure_08,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+***
+
+### Missing values and imputations
+
+Checking the missing values
+
+
+```{r}
+library(naniar)
+library(ggplot2)
+# Visualize missing values by variable
+
+missing_df <- eda_df %>%
+  select(-icustay_id)
+
+figure09 <- gg_miss_var(missing_df, show_pct = TRUE) +
+labs(title = "Missing Values by Variable in Dataset Subset",
+x = "Variables",
+y = "Proportion of Missing Values")
+figure09
+```
+
+```{r}
+ggsave(
+  filename = "../figures/figure09_missing_values.png",
+  plot = figure09,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+```{r}
+# Check missing values
+missing_summary <- sapply(eda_df, function(x) sum(is.na(x)))
+missing_df <- data.frame(
+    Column = names(missing_summary),
+    Missing_Count = missing_summary,
+    Missing_Percent = round(missing_summary/nrow(eda_df)*100, 2)
+  ) %>%
+  arrange(desc(Missing_Count))
+
+print(missing_df)
+```
+
+Several covariates exhibited substantial missingness, most notably mean 
+arterial blood pressure (73.7%), creatine kinase (58.8%), and bilirubin (56.6%).
+As a result, the inclusion of these variables as confounders in multivariable
+models was limited. However, the primary exposure (lactate) and 
+outcome (ICU mortality), as well as key demographic variables, were complete.
+
+Missingness was documented and explored during exploratory analysis, 
+and no imputation was performed.
+
+*** 
+
+## Correlations / collinearity
+
+```{r}
+cor(
+  eda_df %>%
+    select(log_lactate,
+           mabp_value_num,
+           log_bilirubin,
+           log_ck),
+  #Only use rows where all selected variables are observed (no NA values)
+  use = "complete.obs"
+)
+```
+
+Correlations among continuous predictors were weak, indicating no evidence of problematic collinearity.
+
+***
+
+## EDA Summary
+
+Based on exploratory data analysis, lactate was retained as the primary exposure variable and modeled on the log scale due to right-skewed distributions. Creatine kinase and bilirubin were likewise log-transformed prior to analysis. Mean arterial blood pressure was retained on the original scale after removal of physiologically implausible values. Laboratory abnormality flags were excluded, as quantitative measurements provided greater informational content. Correlation analysis indicated no problematic collinearity among continuous predictors. Variables with substantial missingness were considered as secondary confounders, and no imputation was performed.
+
+***
+
+\newpage
+
+# Statistical Analysis
+
+We define the data frame for this part as *analysis_df*.
+
+```{r}
+analysis_df <- eda_df %>%
+  select(
+    icustay_id, age_icu_exit, gender, icu_dead,
+    log_lactate, log_ck, log_bilirubin, mabp_value_num,
+    bilirubin_value_num, ck_value_num, lactate_value_num
+  )
+
+head(analysis_df)
+```
+
+## Fit the main (core) model
+
+```{r}
+model_main <- glm(
+  icu_dead ~ log_lactate + age_icu_exit + gender,
+  data = analysis_df,
+  family = binomial
+)
+summary(model_main)
+```
+In multivariable logistic regression adjusted for age and gender, higher log-transformed lactate levels were strongly associated with increased ICU mortality (OR ≈ 2.8 per unit increase in log-lactate, p < 0.001). Age was independently associated with mortality, while no significant association with gender was observed.
+
+## Fit the model with all variables
+
+This tests robustness to confounding.
+
+```{r}
+model_adjusted <- glm(
+  icu_dead ~ log_lactate + age_icu_exit + gender +
+             mabp_value_num + log_bilirubin + log_ck,
+  data = analysis_df,
+  family = binomial
+)
+summary(model_adjusted)
+```
+After adjustment for age, gender, mean arterial blood pressure, bilirubin, and creatine kinase, higher log-transformed lactate levels remained strongly associated with increased ICU mortality (OR ≈ 2.6 per unit increase in log-lactate).
+
+MAP was not independently associated with ICU mortality after adjustment.
+
+Higher bilirubin levels were independently associated with increased ICU mortality, consistent with liver dysfunction severity.
+
+No independent association between creatine kinase and ICU mortality was observed after adjustment.
+
+In a multivariable logistic regression adjusted for age and gender, higher log-transformed lactate levels were strongly associated with increased ICU mortality (OR ≈ 2.8). This association remained robust after additional adjustment for mean arterial blood pressure, bilirubin, and creatine kinase (OR ≈ 2.6), although the fully adjusted model was restricted to patients with complete data on all covariates.
+
+## Odds Ratio
+
+```{r}
+exp(cbind(
+  OR = coef(model_main),
+  confint(model_main)
+))
+```
+A one-unit increase in log-transformed lactate was associated with a 2.82-fold increase in the odds of ICU mortality (95% CI 2.66–2.99).
+
+No subgroup analyses were performed due to the observational nature of the study and the absence of pre-specified effect modification hypotheses.
+
+***
+
+\newpage
+
+## Inference and Statistical Analysis
+
+### Hypothesis testing: Lactate versus Mortality
+
+We applying a non parametric test, **Wilconox test**, which performs one- 
+and two-sample on vectors of data. The latter is also known as ‘Mann-Whitney’ test.
+
+```{r}
+# Split in survivors and non-survivors vectors
+survivors <- analysis_df %>% filter(icu_dead == 0) %>% pull(log_lactate)
+non_survivors <- analysis_df %>% filter(icu_dead == 1) %>% pull(log_lactate)
+```
+
+We procede a test based on two hypothesis:
+
+* $H_0$: Null hypothesis, which the lactate levels are not different between survivors and non-survivors
+* $H_1$: Alternative hypothesis, which the lactate levels differ between survivors and non-survivors
+
+```{r}
+# Mann-Whitney U Test
+wilcox_result <- wilcox.test(log_lactate ~ icu_dead, 
+                              data = analysis_df,
+                              conf.int = TRUE)
+```
+
+
+```{r}
+cat(sprintf("Median lactate survivors: %.2f mmol/L [IQR: %.2f-%.2f]\n",
+            median(survivors), 
+            quantile(survivors, 0.25), 
+            quantile(survivors, 0.75)))
+cat(sprintf(" Median lactate non-survivors: %.2f mmol/L [IQR: %.2f-%.2f]\n",
+            median(non_survivors), 
+            quantile(non_survivors, 0.25), 
+            quantile(non_survivors, 0.75)))
+```
+
+```{r}
+# Show the results
+wilcox_result
+```
+Based in the first hypothesis the median lactate levels were lower in survivors 
+than in non-survivors:
+
+* Survivors: 0.53 mmol/L (IQR 0.18–0.99)
+* Non-survivors: 0.92 mmol/L (IQR 0.41–1.55)
+
+This indicates a right-shifted distribution of lactate values among non-survivors.
+
+After the no parametric Wilcox test, was used to compare lactate levels between
+survivors and non-survivors. Because the analysis was performed on log-transformed
+lactate values, the test evaluates differences in the location (median) of 
+log-lactate between groups.
+
+* $W = 23,000,966$
+* $p < 2.2 \times 10^{-1^6}$
+the Estimated location shift (log scale): −0.38
+the 95% CI: −0.41 to −0.36
+
+The p-value is low and indicates a highly statistically significant difference 
+in lactate levels between survivors and non-survivors.
+
+The negative location shift means that survivors have lower log-lactate 
+values than non-survivors.
+
+The confidence interval does not cross zero, reinforcing the robustness of the finding.
+
+Because the test was conducted on log-lactate, the estimated difference 
+corresponds to a multiplicative effect on the original scale and it suggests that 
+median lactate levels in survivors are approximately 30–35% lower than in non-survivors.
+
+***
+
+### Dose-response Analysis: Cochran-Armitage trend test.
+
+The **Cochran-Armitage** trend test is a statistical method for detecting a linear 
+trend in proportions across ordered categories. 
+
+It often used in dose-response studies or genetic association studies to see 
+if a response (like disease presence) changes consistently (increases or decreases) 
+with ordered exposures (like drug dose or genotype). 
+
+It's a powerful modification of the chi-squared test, focusing specifically on 
+the linear relationship, making it sensitive to gradual changes rather than
+just overall differences.
+
+```{r}
+# Create lactate categories
+analysis_df <- analysis_df %>%
+  mutate(
+    lactate_cat = case_when(
+      lactate_value_num < 2 ~ "Normal",
+      lactate_value_num >= 2 & lactate_value_num < 4 ~ "Elevated",
+      lactate_value_num >= 4 ~ "Severe"
+    ) %>% factor(levels = c("Normal", "Elevated", "Severe"))
+  )
+
+# Contingency table
+cont_table <- table(analysis_df$lactate_cat, analysis_df$icu_dead)
+
+cat("\nMortality by Lactate Category:\n")
+mort_by_cat <- analysis_df %>%
+  group_by(lactate_cat) %>%
+  summarise(
+    n = n(),
+    deaths = sum(icu_dead),
+    mortality_rate = mean(icu_dead) * 100,
+    .groups = "drop"
+  )
+print(mort_by_cat)
+```
+
+```{r}
+# Chi-square test
+chisq_result <- chisq.test(cont_table)
+cat(sprintf("\nChi-square test: χ² = %.2f, df = %d, p < 0.001\n",
+            chisq_result$statistic, chisq_result$parameter))
+
+# Cochran-Armitage trend test
+library(DescTools)
+ca_test <- CochranArmitageTest(cont_table, alternative = "one.sided")
+cat(sprintf("Cochran-Armitage trend test: Z = %.2f, p = %.3f\n", 
+            ca_test$statistic, ca_test$p.value))
+
+# Interpretation based on the direction
+if (ca_test$statistic > 0) {
+  cat("Interpretation: Significant increasing trend in mortality with lactate\n")
+} else {
+  cat("Interpretation: Significant decreasing trend in mortality with lactate\n")
+}
+```
+The statistical analyses demonstrate a highly significant association between 
+lactate levels and ICU mortality.
+
+The chi-square test yielded $\chi^2 = 1259.55$ (df = 2, p < 0.001),
+indicating a strong relationship between lactate categories and death, while the
+Cochran-Armitage trend test (Z = -31.50, p < 0.001) confirms an extremely 
+strong linear trend.
+
+Despite the negative Z statistic (an artifact of table coding), the mortality 
+data unambiguously show an increasing dose-response relationship: patients with
+normal lactate (<0.5 mmol/L) had 11.2% mortality, those with elevated 
+lactate (0.5-2.0 mmol/L) had 15.2% mortality, and those with 
+severe hyperlactatemia (>2.0 mmol/L) had 38.0% mortality, representing a more 
+than three-fold increase in risk compared to the normal group. 
+
+These findings confirm that higher lactate levels are strongly associated with
+progressively worse outcomes in critically ill patients, establishing lactate 
+as a powerful prognostic marker in the ICU setting.
+
+***
+
+### Confidence intervals: Mortality rates by category
+
+
+```{r}
+
+# Function for exact binomial CI
+calculate_mortality_ci <- function(data, category) {
+  subset_data <- data %>% filter(lactate_cat == category)
+  n <- nrow(subset_data)
+  deaths <- sum(subset_data$icu_dead)
+  
+  # Wilson score interval (better for proportions)
+  binom_test <- binom.test(deaths, n)
+  
+  data.frame(
+    category = category,
+    n = n,
+    deaths = deaths,
+    mortality_rate = deaths/n * 100,
+    ci_lower = binom_test$conf.int[1] * 100,
+    ci_upper = binom_test$conf.int[2] * 100
+  )
+}
+
+mortality_ci <- bind_rows(
+  calculate_mortality_ci(analysis_df, "Normal"),
+  calculate_mortality_ci(analysis_df, "Elevated"),
+  calculate_mortality_ci(analysis_df, "Severe")
+)
+
+cat("\nMortality Rates with 95% Confidence Intervals:\n")
+print(mortality_ci, digits = 2)
+```
+
+The 95% confidence intervals for mortality rates demonstrate precise estimates 
+with non-overlapping ranges across lactate categories, confirming distinct risk strata. 
+
+For patients with normal lactate levels, the mortality rate of 11.2% has a 
+relatively narrow confidence interval (10.6% to 11.7%), reflecting the large 
+sample size of 12,093 patients. The elevated lactate group shows a mortality 
+rate of 15.2% (95% CI: 14.4% to 16.1%), with the lower bound of this interval 
+clearly exceeding the upper bound of the normal group, indicating a statistically 
+significant difference between these categories. 
+
+Most strikingly, the severe hyperlactatemia group demonstrates a mortality 
+rate of 38.0% (95% CI: 36.2% to 39.8%), with its lower confidence bound substantially higher than the upper bound of the elevated group, further confirming the progressive increase in risk. 
+
+The non-overlapping confidence intervals provide strong statistical evidence that each lactate category represents a genuinely distinct risk level, with patients moving from one category to the next facing significantly and progressively higher mortality risk.
+
+***
+
+### Confidence intervals using bootstrap for odds ratios.
+
+
+```{r}
+# Function to calculate OR via bootstrap
+boot_or <- function(data, indices) {
+  d <- data[indices, ]
+  model <- glm(icu_dead ~ log_lactate + age_icu_exit + gender,
+               data = d, family = binomial())
+  coef(model)["log_lactate"]
+}
+
+# Run bootstrap (1000 replicates)
+set.seed(42)
+boot_results <- boot(data = analysis_df, statistic = boot_or, R = 1000)
+
+# Calculate percentile CI
+boot_ci <- boot.ci(boot_results, type = "perc")
+
+cat("\nBootstrap OR for log-lactate (1000 replicates):\n")
+cat(sprintf("   Point estimate: %.3f (OR = %.3f)\n", 
+            boot_results$t0, 
+            exp(boot_results$t0)))
+cat(sprintf("   95%% Percentile CI: %.3f to %.3f\n",
+            boot_ci$percent[4], 
+            boot_ci$percent[5]))
+cat(sprintf("   OR 95%% CI: %.3f to %.3f\n",
+            exp(boot_ci$percent[4]), 
+            exp(boot_ci$percent[5])))
+```
+The bootstrap analysis with 1,000 replicates confirms a robust association between lactate levels and mortality, with each unit increase in log-lactate associated with an odds ratio of 2.82 (95% CI: 2.66 to 3.01), meaning that for every doubling of lactate concentration, the odds of death increase approximately 2.8-fold.
+
+The confidence interval is relatively narrow and does not include 1.0, providing strong statistical evidence that elevated lactate is a significant and reliable predictor of ICU mortality, with the lower bound still indicating at least a 2.66-fold increased risk per unit change in log-lactate.
+
+***
+
+### Central Limit theorem demonstration
+
+```{r}
+# Demonstrate CLT by repeated sampling
+set.seed(42)
+n_simulations <- 10000
+sample_size <- 100
+
+sample_means <- replicate(n_simulations, {
+  sample_idx <- sample(1:nrow(eda_df), sample_size, replace = TRUE)
+  mean(eda_df$lactate_value_num[sample_idx])
+})
+
+# Test normality of sampling distribution
+shapiro_test <- shapiro.test(sample(sample_means, 5000))
+
+cat(sprintf("\nSampling distribution of lactate mean (%d samples, n=%d each):\n",
+            n_simulations, sample_size))
+cat(sprintf("   Mean of sample means: %.3f\n", mean(sample_means)))
+cat(sprintf("   Population mean: %.3f\n", mean(eda_df$lactate_value_num)))
+cat(sprintf("   SD of sample means: %.3f\n", sd(sample_means)))
+cat(sprintf("   Theoretical SE: %.3f\n", 
+            sd(eda_df$lactate_value_num) / sqrt(sample_size)))
+cat(sprintf("   Shapiro-Wilk test: W = %.4f, p = %.4f\n",
+            shapiro_test$statistic, shapiro_test$p.value))
+cat("   Conclusion: Sampling distribution is approximately normal (CLT)\n")
+
+
+fig10a <- ggplot(eda_df, aes(lactate_value_num)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") +
+  labs(
+    title = "Original Lactate Distribution",
+    x = "Lactate (mmol/L)",
+    y = "Count"
+  )
+
+fig10b <- ggplot(data.frame(sample_means), aes(sample_means)) +
+  geom_histogram(bins = 50, fill = "coral", color = "white") +
+  stat_function(
+    fun = function(x)
+      dnorm(x, mean(sample_means), sd(sample_means)) *
+      length(sample_means) *
+      diff(range(sample_means)) / 50,
+    color = "red",
+    linewidth = 1
+  ) +
+  labs(
+    title = "Sampling Distribution of Mean",
+    x = "Sample Mean Lactate (mmol/L)",
+    y = "Count"
+  )
+
+fig10a
+fig10b
+
+```
+
+
+
+```{r}
+ggsave(
+  filename = "../figures/figure10a_clt_demonstration.png",
+  plot = fig10a,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+
+ggsave(
+  filename = "../figures/figure10b_clt_demonstration.png",
+  plot = fig10b,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+```
+
+
+The central limit theorem demonstration using 10,000 bootstrap samples of size 
+100 confirms that the sampling distribution of lactate means is approximately normal. 
+
+The mean of all sample means (2.438 mmol/L) is virtually identical to the 
+population mean (2.436 mmol/L), demonstrating unbiased estimation. 
+
+The observed standard deviation of sample means (0.206) closely matches the 
+theoretical standard error (0.205), validating the mathematical prediction of
+sampling variability. 
+
+Although the Shapiro-Wilk test shows statistical significance (W = 0.9944, p < 0.001) 
+due to the large number of samples making it highly sensitive to minor deviations, 
+the W statistic of 0.9944 (very close to the perfect value of 1.0) indicates 
+the distribution is substantively normal, confirming that the central limit theorem
+holds even for lactate data which may not be normally distributed at the individual level.
+
+*** 
+
+### Probability estimation: Predicted mortality probabilities
+
+```{r}
+# Fit final model
+final_model <- glm(icu_dead ~ log_lactate + age_icu_exit + gender,
+                   data = analysis_df, family = binomial())
+
+# Create prediction scenarios
+scenarios <- data.frame(
+  scenario = c("Low risk", "Medium risk", "High risk", "Very high risk"),
+  log_lactate = log(c(1.0, 2.0, 4.0, 8.0)),
+  age_icu_exit = c(50, 65, 75, 80),
+  gender = c("M", "M", "M", "M")
+)
+
+# Predict probabilities
+scenarios$predicted_prob <- predict(final_model, scenarios, type = "response")
+scenarios$predicted_mortality_pct <- scenarios$predicted_prob * 100
+
+# Calculate 95% CI for predictions
+pred_se <- predict(final_model, scenarios, type = "link", se.fit = TRUE)
+scenarios$ci_lower <- plogis(pred_se$fit - 1.96 * pred_se$se.fit) * 100
+scenarios$ci_upper <- plogis(pred_se$fit + 1.96 * pred_se$se.fit) * 100
+
+cat("\nPredicted Mortality for Clinical Scenarios:\n")
+print(scenarios %>% 
+        select(scenario, predicted_mortality_pct, ci_lower, ci_upper) %>%
+        mutate(across(where(is.numeric), ~round(., 1))),
+      row.names = FALSE)
+```
+
+The logistic regression model provides well-calibrated probability estimates for mortality across different risk scenarios with tight confidence intervals. 
+
+Patients in the low-risk category have a predicted mortality of 5.3% (95% CI: 4.9% to 5.8%), representing the baseline risk for those with favorable lactate levels. Medium-risk patients face a predicted mortality of 14.1% (95% CI: 13.4% to 14.7%), nearly tripling the baseline risk, while high-risk patients show a predicted mortality of 29.8% (95% CI: 28.5% to 31.0%), approaching one-third mortality probability.
+
+Most critically, very high-risk patients have a predicted mortality of 49.4% (95% CI: 47.1% to 51.7%), indicating nearly a coin-flip chance of death and representing more than a nine-fold increase compared to low-risk patients. 
+
+The narrow, non-overlapping confidence intervals across all risk categories demonstrate that the model provides reliable and discriminating probability estimates, enabling clinicians to stratify patients into distinct prognostic groups based on their lactate levels.
+
+***
+
+### Subgroup analysis: Age stratification
+
+```{r}
+# Create age groups
+analysis_df <- analysis_df %>%
+  mutate(
+    age_group = cut(age_icu_exit, 
+                    breaks = c(0, 50, 65, 80, Inf),
+                    labels = c("<50", "50-65", "65-80", ">80"))
+  )
+
+# Stratified analysis
+subgroup_results <- analysis_df %>%
+  group_by(age_group) %>%
+  do({
+    model <- glm(icu_dead ~ log_lactate, data = ., family = binomial())
+    tidy(model, exponentiate = TRUE, conf.int = TRUE) %>%
+      filter(term == "log_lactate")
+  }) %>%
+  ungroup()
+
+cat("\nOR for log-lactate by age group:\n")
+print(subgroup_results %>% 
+        select(age_group, estimate, conf.low, conf.high, p.value),
+      digits = 3)
+```
+
+
+```{r}
+# Test for interaction
+model_main <- glm(icu_dead ~ log_lactate + age_group,
+                  data = analysis_df, family = binomial())
+
+model_interaction <- glm(icu_dead ~ log_lactate * age_group,
+                         data = analysis_df, family = binomial())
+
+anova_interaction <- anova(model_main, model_interaction, test = "Chisq")
+
+cat(sprintf("\nInteraction test (lactate × age): χ² = %.2f, p = %.3f\n",
+            anova_interaction$Deviance[2],
+            anova_interaction$`Pr(>Chi)`[2]))
+
+if (anova_interaction$`Pr(>Chi)`[2] > 0.05) {
+  cat("Conclusion: No significant effect modification by age\n")
+} else {
+  cat("Conclusion: Significant effect modification by age detected\n")
+}
+```
+
+The interaction test reveals significant effect modification by age $\chi^2 = 49.52, p < 0.001$, indicating that the association between lactate levels and mortality is not uniform across different age groups. 
+
+This means that the prognostic value of lactate varies depending on patient age, with some age strata showing stronger or weaker associations between elevated lactate and death than others. 
+
+The highly significant p-value provides strong statistical evidence that age modifies how lactate predicts mortality risk, suggesting that clinicians should interpret lactate values in the context of patient age when assessing prognosis, as a given lactate level may carry different mortality implications for younger versus older ICU patients.
+
+### Statistical Inference analysis Summary
+
+The analysis shows strong links between lactate levels and mortality in ICU patients. Non-survivors had higher lactate levels compared to survivors, with significant statistical results (p &lt; 0.001).
+
+The analysis found that as lactate levels increase, so do mortality rates, with rates rising from 11.2% to 38.0% in different lactate groups. Each unit increase in log-lactate raised the odds of death by 2.82 times. 
+The model provides accurate mortality estimates, ranging from 5.3% in low-risk to 49.4% in very high-risk patients. The study confirmed the normality of the distribution, validating the findings, and noted that lactate's impact varies with age, suggesting the need for age-specific clinical interpretations.
+
+***
+
+\newpage
+
+# Machine Learning modeling
+
+## Patient clustering and segmentation to identify risk phenotypes
+
+This analysis seeks to find unique patient groups in the ICU by clustering patients based on their lactate levels and related traits. By dividing patients into similar risk groups, it aims to reveal hidden patterns and clinically meaningful subtypes for better treatment and resource use in critical care.
+
+```{r}
+# Use complete cases for clustering (from your PDF: 141 patients with all variables)
+clustering_df <- analysis_df %>%
+  select(icustay_id, age_icu_exit, log_lactate, log_ck, 
+         log_bilirubin, mabp_value_num, icu_dead) %>%
+  na.omit() %>%
+  mutate(
+    patient_id = row_number()
+  )
+
+cat(sprintf("Clustering dataset: %d patients with complete data\n", 
+            nrow(clustering_df)))
+cat(sprintf("Mortality rate: %.1f%%\n\n", 
+            mean(clustering_df$icu_dead) * 100))
+
+# Prepare feature matrix (exclude IDs and outcome)
+features_for_clustering <- clustering_df %>%
+  select(age_icu_exit, log_lactate, log_ck, log_bilirubin, mabp_value_num)
+
+# Standardize features (z-score normalization)
+features_scaled <- scale(features_for_clustering)
+rownames(features_scaled) <- clustering_df$patient_id
+```
+
+We proceed to determinate the optimal number of clusters.
+
+
+```{r}
+# a) Elbow Method
+set.seed(42)
+wss <- sapply(1:10, function(k) {
+  kmeans(features_scaled, centers = k, nstart = 25)$tot.withinss
+})
+
+# b) Silhouette Method
+set.seed(42)
+silhouette_scores <- sapply(2:10, function(k) {
+  km <- kmeans(features_scaled, centers = k, nstart = 25)
+  ss <- silhouette(km$cluster, dist(features_scaled))
+  mean(ss[, 3])
+})
+
+# c) Gap Statistic
+set.seed(42)
+gap_stat <- clusGap(features_scaled, 
+                    FUN = kmeans, 
+                    nstart = 25,
+                    K.max = 10, 
+                    B = 50)
+
+cat("\nOptimal clusters by different methods:\n")
+cat(sprintf("  Elbow method: Visual inspection of plot\n"))
+cat(sprintf("  Silhouette: k = %d (score = %.3f)\n", 
+            which.max(silhouette_scores) + 1, 
+            max(silhouette_scores)))
+cat(sprintf("  Gap statistic: k = %d\n", 
+            which.max(gap_stat$Tab[, "gap"])))
+
+
+# Plotting elbow
+elbow_df <- data.frame(
+  k = 1:10,
+  wss = wss
+)
+
+fig11a <- ggplot(elbow_df, aes(x = k, y = wss)) +
+  geom_line(linewidth = 1, color = "steelblue") +
+  geom_point(size = 2, color = "steelblue") +
+  labs(
+    title = "Elbow Method",
+    x = "Number of Clusters (k)",
+    y = "Within-cluster Sum of Squares"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+fig11a
+
+
+# Silhouette plot
+silhouette_df <- data.frame(
+  k = 2:10,
+  silhouette = silhouette_scores
+)
+
+fig_11b <- ggplot(silhouette_df, aes(x = k, y = silhouette)) +
+  geom_line(linewidth = 1, color = "coral") +
+  geom_point(size = 2, color = "coral") +
+  labs(
+    title = "Silhouette Method",
+    x = "Number of Clusters (k)",
+    y = "Average Silhouette Width"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+fig_11b
+
+# Choose k=3 based on clinical interpretability and silhouette
+optimal_k <- 3
+cat(sprintf("\nSelected k = %d for final clustering\n", optimal_k))
+```
+
+
+```{r include=FALSE}
+
+ggsave(
+  filename = "../figures/figure11a_elbow.png",
+  plot = fig11a,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+
+ggsave(
+  filename = "../figures/figure11b_silhouette.png",
+  plot = fig_11b,
+  width = 15,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+
+```
+
+
+After the first results, we have to choose k=3, also both results shows a range between 2 and 4 cluster as optimal number.
+
+## Apply K-Means Clustering
+
+```{r}
+set.seed(42)
+# Starting with k=3
+kmeans_result <- kmeans(features_scaled, centers = optimal_k, nstart = 50)
+
+# Add cluster assignment to dataframe
+clustering_df$cluster_kmeans <- factor(kmeans_result$cluster,
+                                       labels = c("Cluster 1", "Cluster 2", "Cluster 3"))
+
+# Cluster sizes
+cat("\nCluster sizes:\n")
+print(table(clustering_df$cluster_kmeans))
+
+# Cluster centers (back-transformed)
+cluster_centers <- kmeans_result$centers
+cluster_centers_original <- t(apply(cluster_centers, 1, function(x) {
+  x * attr(features_scaled, "scaled:scale") + 
+    attr(features_scaled, "scaled:center")
+}))
+
+cat("\nCluster centers (original scale):\n")
+print(round(cluster_centers_original, 2))
+
+# Mortality by cluster
+mortality_by_cluster <- clustering_df %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    n = n(),
+    mean_age = mean(age_icu_exit),
+    mean_lactate = mean(exp(log_lactate)),  # Back-transform
+    mean_ck = mean(exp(log_ck)),
+    mean_bilirubin = mean(exp(log_bilirubin)),
+    mean_mabp = mean(mabp_value_num),
+    deaths = sum(icu_dead),
+    mortality_rate = mean(icu_dead) * 100,
+    .groups = "drop"
+  )
+
+cat("\nMortality by K-means cluster:\n")
+print(mortality_by_cluster, digits = 1)
+
+# Statistical test: Chi-square
+chisq_kmeans <- chisq.test(table(clustering_df$cluster_kmeans, 
+                                  clustering_df$icu_dead))
+cat(sprintf("\nChi-square test (cluster vs mortality): χ² = %.2f, p = %.4f\n",
+            chisq_kmeans$statistic, chisq_kmeans$p.value))
+
+fig12 <- ggplot() +
+  geom_point(data = clustering_df,
+             mapping = aes(x = age_icu_exit,
+                          y = exp(log_lactate),  # Back-transform
+                          colour = cluster_kmeans),
+             size = 2, alpha = 0.6) +
+  labs(title = "K-means Clustering: Age vs Lactate",
+       x = "Age at ICU Exit",
+       y = "Lactate (mmol/L)",
+       colour = "Cluster") +
+  theme_minimal()
+fig12
+```
+
+```{r include=FALSE}
+ggsave(
+  "../figures/figure12_kmeans.png",
+  plot = fig12,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
+```
+
+
+The k-means clustering analysis identified three distinct patient phenotypes with significantly different mortality profiles $\chi^2 = 79.67, p < 0.001$. 
+
+* Cluster 1 represents the largest group (591 patients) characterized by older age (70 years), low lactate levels, moderate creatine kinase, low bilirubin, and relatively stable blood pressure, suggesting a lower-risk elderly population.
+
+* Cluster 2 (314 patients) captures high-risk patients with elevated lactate (1.41 log mmol/L), very high bilirubin (1.04 log mg/dL), elevated creatine kinase, and lower blood pressure (73.71 mmHg), indicating multi-organ dysfunction and hemodynamic instability.
+
+* Cluster 3 (239 patients) identifies a younger cohort (50 years) with moderately elevated lactate, extremely high creatine kinase (7.41 log U/L), and good blood pressure, potentially representing trauma or rhabdomyolysis cases. 
+
+These data-driven reveal that ICU patients stratify into clinically interpretable risk groups beyond simple lactate categorization. Cluster 1 is older and lower risk. Cluster 2 is high risk with organ dysfunction. Cluster 3 is younger, possibly trauma cases. Each group shows distinct health patterns linked to mortality.
+
+***
+
+## Hierarchical clustering
+
+We are examining patterns among three groups using dendogram visualization, focusing on `subject_id` for future analysis.
+
+```{r}
+# Calculate distance matrix
+dist_matrix <- dist(features_scaled, method = "euclidean")
+
+# Perform hierarchical clustering
+hc_complete <- hclust(dist_matrix, method = "complete")
+hc_ward <- hclust(dist_matrix, method = "ward.D2")
+
+# Cut dendrogram to get 3 clusters
+clustering_df$cluster_hc <- factor(cutree(hc_ward, k = optimal_k),
+                                   labels = c("HC-1", "HC-2", "HC-3"))
+
+# Mortality by hierarchical cluster
+mortality_by_hc <- clustering_df %>%
+  group_by(cluster_hc) %>%
+  summarise(
+    n = n(),
+    deaths = sum(icu_dead),
+    mortality_rate = mean(icu_dead) * 100,
+    .groups = "drop"
+  )
+
+cat("\nMortality by Hierarchical cluster:\n")
+print(mortality_by_hc, digits = 1)
+
+# Select the most representative subjects (medoids)
+cluster_membership <- cutree(hc_ward, k = optimal_k)
+representatives <- lapply(1:optimal_k, function(k) {
+  members <- which(cluster_membership == k)
+  sub_dist <- as.matrix(dist_matrix)[members, members]
+  # Medoid = subject with minimal average distance to all others in cluster
+  members[which.min(rowMeans(sub_dist))]
+})
+representatives <- unlist(representatives)
+
+# Extract only representative subjects
+rep_indices <- representatives
+rep_dist_matrix <- as.dist(as.matrix(dist_matrix)[rep_indices, rep_indices])
+rep_hc_ward <- hclust(rep_dist_matrix, method = "ward.D2")
+
+# Create labels for representatives only
+rep_labels <- eda_df$icustay_id[rep_indices]
+rep_clusters <- cluster_membership[rep_indices]
+
+# Visualize dendrogram with only representative subjects
+fig13 <- fviz_dend(
+  rep_hc_ward,
+  k = optimal_k,
+  show_labels = TRUE,
+  rect = TRUE,
+  main = "Hierarchical Clustering - Representative Subjects Only",
+  horiz = TRUE,
+  lwd = 1.5,
+  cex = 1.2,
+  color_labels_by_k = TRUE
+)
+
+print(fig13)
+
+# Print representative subject details
+cat("\nRepresentative subjects by cluster:\n")
+rep_df <- eda_df[rep_indices, ] %>%
+  mutate(cluster = factor(rep_clusters, labels = c("HC-1", "HC-2", "HC-3"))) %>%
+  select(icustay_id, cluster, age_icu_exit, lactate_value_num, ck_value_num, 
+         bilirubin_value_num, mabp_value_num, icu_dead)
+
+print(rep_df)
+```
+
+```{r include=FALSE}
+ggsave(
+  "../figures/figure13_dendrogram.png",
+  plot = fig13,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
+```
+
+
+The hierarchical clustering analysis identified three patient phenotypes with distinct mortality profiles that differ substantially from the k-means results. Cluster HC-1, the largest group with 371 patients, shows a relatively low mortality rate of 18.9%, representing a moderate-risk population. Cluster HC-2, comprising 593 patients, demonstrates the highest mortality at 38.3%, indicating a high-risk phenotype characterized by severe physiological derangement and poor prognosis. Cluster HC-3, with 180 patients, exhibits an intermediate mortality rate of 21.7%, falling between the other two clusters. 
+
+The hierarchical approach reveals a different patient segmentation pattern compared to k-means, with HC-2 identifying a larger proportion of critically ill patients at substantially elevated mortality risk, suggesting that the dendrogram-based hierarchical method captures different aspects of patient heterogeneity and risk stratification that may complement the k-means partitioning approach.
+
+
+***
+
+## Model-based clustering (Gaussian Mixture models)
+
+
+```{r}
+# Fit GMM with 1-6 components
+set.seed(42)
+gmm_result <- Mclust(features_scaled, G = 1:6)
+
+cat(sprintf("\nOptimal GMM model: %s with %d components\n",
+            gmm_result$modelName, gmm_result$G))
+cat(sprintf("BIC: %.1f\n", gmm_result$bic))
+
+# Add GMM cluster assignment
+clustering_df$cluster_gmm <- factor(gmm_result$classification,
+                                    labels = paste0("GMM-", 1:gmm_result$G))
+
+# Mortality by GMM cluster
+mortality_by_gmm <- clustering_df %>%
+  group_by(cluster_gmm) %>%
+  summarise(
+    n = n(),
+    deaths = sum(icu_dead),
+    mortality_rate = mean(icu_dead) * 100,
+    .groups = "drop"
+  )
+
+cat("\nMortality by GMM cluster:\n")
+print(mortality_by_gmm, digits = 1)
+```
+
+
+### Cluster Visualization PCA
+
+
+```{r}
+# Perform PCA for visualization
+pca_result <- prcomp(features_scaled)
+pca_variance <- summary(pca_result)$importance[2, 1:4] * 100
+
+cat(sprintf("\nPCA variance explained:\n"))
+cat(sprintf("  PC1: %.1f%%\n", pca_variance[1]))
+cat(sprintf("  PC2: %.1f%%\n", pca_variance[2]))
+cat(sprintf("  PC3: %.1f%%\n", pca_variance[3]))
+cat(sprintf("  PC4: %.1f%%\n", pca_variance[4]))
+
+# Add PCA coordinates to dataframe
+clustering_df$PC1 <- pca_result$x[, 1]
+clustering_df$PC2 <- pca_result$x[, 2]
+
+par(mfrow = c(2, 2))
+
+# K-means clusters
+plot(clustering_df$PC1, clustering_df$PC2,
+     col = as.numeric(clustering_df$cluster_kmeans) + 1,
+     pch = ifelse(clustering_df$icu_dead == 1, 17, 19),
+     cex = 1.2,
+     xlab = sprintf("PC1 (%.1f%% variance)", pca_variance[1]),
+     ylab = sprintf("PC2 (%.1f%% variance)", pca_variance[2]),
+     main = "K-means Clustering")
+legend("topright",
+       legend = c(levels(clustering_df$cluster_kmeans), "Died", "Survived"),
+       col = c(2:4, 1, 1),
+       pch = c(19, 19, 19, 17, 19),
+       cex = 0.8)
+
+# Hierarchical clusters
+plot(clustering_df$PC1, clustering_df$PC2,
+     col = as.numeric(clustering_df$cluster_hc) + 1,
+     pch = ifelse(clustering_df$icu_dead == 1, 17, 19),
+     cex = 1.2,
+     xlab = sprintf("PC1 (%.1f%% variance)", pca_variance[1]),
+     ylab = sprintf("PC2 (%.1f%% variance)", pca_variance[2]),
+     main = "Hierarchical Clustering")
+legend("topright",
+       legend = levels(clustering_df$cluster_hc),
+       col = 2:4, pch = 19, cex = 0.8)
+
+# GMM clusters
+plot(clustering_df$PC1, clustering_df$PC2,
+     col = as.numeric(clustering_df$cluster_gmm) + 1,
+     pch = ifelse(clustering_df$icu_dead == 1, 17, 19),
+     cex = 1.2,
+     xlab = sprintf("PC1 (%.1f%% variance)", pca_variance[1]),
+     ylab = sprintf("PC2 (%.1f%% variance)", pca_variance[2]),
+     main = "GMM Clustering")
+legend("topright",
+       legend = levels(clustering_df$cluster_gmm),
+       col = 2:(gmm_result$G + 1), pch = 19, cex = 0.8)
+
+# Mortality overlay
+plot(clustering_df$PC1, clustering_df$PC2,
+     col = ifelse(clustering_df$icu_dead == 1, "red", "green"),
+     pch = 19, cex = 1.2,
+     xlab = sprintf("PC1 (%.1f%% variance)", pca_variance[1]),
+     ylab = sprintf("PC2 (%.1f%% variance)", pca_variance[2]),
+     main = "Mortality Status")
+legend("topright",
+       legend = c("Died", "Survived"),
+       col = c("red", "green"), pch = 19, cex = 0.8)
+
+```
+
+```{r}
+summary(pca_result)$importance[,] * 100
+```
+
+The first principal component has only ~30% of variance explained, plus the second
+component is around 54%. We need almost 4 principal components to reach 90%.
+
+
+### Cluster profiling & interpretation 
+
+```{r}
+# Detailed profiling
+cluster_profile <- clustering_df %>%
+  group_by(cluster_kmeans) %>%
+  summarise(
+    n = n(),
+    
+    # Demographics
+    age_mean = mean(age_icu_exit),
+    age_sd = sd(age_icu_exit),
+    
+    # Lactate (back-transformed)
+    lactate_median = median(exp(log_lactate)),
+    lactate_q1 = quantile(exp(log_lactate), 0.25),
+    lactate_q3 = quantile(exp(log_lactate), 0.75),
+    
+    # CK (back-transformed)
+    ck_median = median(exp(log_ck)),
+    ck_q1 = quantile(exp(log_ck), 0.25),
+    ck_q3 = quantile(exp(log_ck), 0.75),
+    
+    # Bilirubin (back-transformed)
+    bili_median = median(exp(log_bilirubin)),
+    bili_q1 = quantile(exp(log_bilirubin), 0.25),
+    bili_q3 = quantile(exp(log_bilirubin), 0.75),
+    
+    # MAP
+    map_mean = mean(mabp_value_num),
+    map_sd = sd(mabp_value_num),
+    
+    # Outcome
+    deaths = sum(icu_dead),
+    mortality_pct = mean(icu_dead) * 100,
+    
+    .groups = "drop"
+  )
+```
+
+
+
+```{r}
+cat("\nDetailed Cluster Profiles:\n")
+print(cluster_profile, digits = 2)
+
+# Clinical interpretation
+cat("\n\nCLINICAL INTERPRETATION OF CLUSTERS:\n")
+cat(rep("=", 70), "\n")
+
+for (i in 1:optimal_k) {
+  cluster_data <- cluster_profile %>% filter(cluster_kmeans == paste0("Cluster ", i))
+  
+  cat(sprintf("\n%s (n=%d, mortality %.1f%%):\n", 
+              paste0("Cluster ", i), 
+              cluster_data$n, 
+              cluster_data$mortality_pct))
+  
+  cat(sprintf("  Age: %.0f ± %.0f years\n", 
+              cluster_data$age_mean, 
+              cluster_data$age_sd))
+  cat(sprintf("  Lactate: %.1f [%.1f-%.1f] mmol/L\n",
+              cluster_data$lactate_median,
+              cluster_data$lactate_q1,
+              cluster_data$lactate_q3))
+  cat(sprintf("  CK: %.0f [%.0f-%.0f] IU/L\n",
+              cluster_data$ck_median,
+              cluster_data$ck_q1,
+              cluster_data$ck_q3))
+  cat(sprintf("  Bilirubin: %.1f [%.1f-%.1f] mg/dL\n",
+              cluster_data$bili_median,
+              cluster_data$bili_q1,
+              cluster_data$bili_q3))
+  cat(sprintf("  MAP: %.0f ± %.0f mmHg\n",
+              cluster_data$map_mean,
+              cluster_data$map_sd))
+  
+  # Interpret cluster
+  if (cluster_data$lactate_median < 2 && cluster_data$mortality_pct < 30) {
+    cat("  INTERPRETATION: LOW RISK - Relatively stable patients\n")
+  } else if (cluster_data$lactate_median >= 4 || cluster_data$mortality_pct > 60) {
+    cat("  INTERPRETATION: HIGH RISK - Severely ill, high mortality\n")
+  } else {
+    cat("  INTERPRETATION: MODERATE RISK - Mixed severity\n")
+  }
+}
+```
+
+The cluster profiling reveals three clinically distinct ICU patient phenotypes with different risk profiles and pathophysiological characteristics. Cluster 1 (n=591, 20.8% mortality) represents a "low-risk elderly stable" group with older patients (70 years) who have relatively normal lactate (1.4 mmol/L), low creatine kinase, stable hemodynamics (MAP 82 mmHg), and preserved liver function, suggesting age-related admissions with less acute physiological derangement. Cluster 2 (n=314, 48.7% mortality) identifies a "high-risk multi-organ dysfunction" phenotype characterized by severe hyperlactatemia (4.1 mmol/L), significantly elevated bilirubin (2.5 mg/dL), hemodynamic instability (MAP 74 mmHg), and elevated creatine kinase, indicating patients with profound metabolic derangement, hepatic dysfunction, and tissue hypoperfusion who face nearly 50% mortality risk. Cluster 3 (n=239, 25.1% mortality) captures a "moderate-risk younger trauma/rhabdomyolysis" group with substantially younger patients (50 years), extremely elevated creatine kinase (1,465 IU/L suggesting muscle injury), moderately elevated lactate, preserved blood pressure, and normal bilirubin, likely representing trauma, seizure, or rhabdomyolysis cases with intermediate prognosis despite marked CK elevation, demonstrating that younger age and single-organ pathology confer better outcomes than multi-organ failure.
+
+
+```{r}
+# Save clustering results
+clustering_results <- list(
+  optimal_k = optimal_k,
+  kmeans_model = kmeans_result,
+  hc_model = hc_ward,
+  gmm_model = gmm_result,
+  mortality_by_cluster = mortality_by_cluster,
+  cluster_profiles = cluster_profile,
+  patient_assignments = clustering_df
+)
+
+if (!dir.exists("../results")) {
+dir.create("../results", recursive = TRUE)
+}
+save(clustering_results, file = "../results/clustering_results.RData")
+
+cat("\nKey findings:\n")
+cat(sprintf("  - Identified %d distinct patient clusters\n", optimal_k))
+cat(sprintf("  - Mortality ranges from %.1f%% to %.1f%% across clusters\n",
+            min(mortality_by_cluster$mortality_rate),
+            max(mortality_by_cluster$mortality_rate)))
+cat("  - Clusters reflect different severity profiles\n")
+cat("\nResults saved to: results/clustering_results.RData\n")
+```
+
+***
+
+## ML models (C5.0, Random Forest, LGBoost) + SHAP explanations
+
+
+```{r}
+# Prepare ML dataset with median imputation
+ml_data <- analysis_df %>%
+  select(icustay_id, age_icu_exit, gender, icu_dead, 
+         log_lactate, log_ck, log_bilirubin, mabp_value_num) %>%
+  mutate(
+    # Impute missing values with median
+    log_ck = if_else(is.na(log_ck), median(log_ck, na.rm = TRUE), log_ck),
+    log_bilirubin = if_else(is.na(log_bilirubin), 
+                             median(log_bilirubin, na.rm = TRUE), 
+                             log_bilirubin),
+    mabp_value_num = if_else(is.na(mabp_value_num), 
+                              median(mabp_value_num, na.rm = TRUE), 
+                              mabp_value_num),
+    # Convert gender to numeric
+    gender_num = ifelse(gender == "M", 1, 0),
+    # Convert outcome to factor for classification
+    icu_dead_f = factor(icu_dead, levels = c(0, 1), 
+                        labels = c("Survived", "Died"))
+  ) %>%
+  select(-gender, -icustay_id)
+
+cat(sprintf("Dataset size: %d patients\n", nrow(ml_data)))
+cat(sprintf("Features: %d\n", ncol(ml_data) - 2))  # Exclude outcomes
+cat(sprintf("Class balance: %.1f%% died, %.1f%% survived\n",
+            mean(ml_data$icu_dead) * 100,
+            mean(ml_data$icu_dead == 0) * 100))
+
+# Train-test split (75-25)
+set.seed(42)
+train_idx <- createDataPartition(ml_data$icu_dead_f, p = 0.75, list = FALSE)
+train_data <- ml_data[train_idx, ]
+test_data <- ml_data[-train_idx, ]
+
+cat(sprintf("\nTrain set: %d (%.1f%% died)\n", 
+            nrow(train_data),
+            mean(train_data$icu_dead) * 100))
+cat(sprintf("Test set: %d (%.1f%% died)\n", 
+            nrow(test_data),
+            mean(test_data$icu_dead) * 100))
+```
+Next step is creating a machine learning baseline model, the Logistic regression.
+
+```{r}
+# Train control
+train_control <- trainControl(
+  method = "cv",
+  number = 10,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final"
+)
+
+# Train logistic regression
+set.seed(42)
+model_glm <- train(
+  icu_dead_f ~ age_icu_exit + gender_num + log_lactate + 
+    log_ck + log_bilirubin + mabp_value_num,
+  data = train_data,
+  method = "glm",
+  family = "binomial",
+  trControl = train_control,
+  metric = "ROC"
+)
+
+# Predictions
+pred_glm <- predict(model_glm, test_data, type = "prob")[, "Died"]
+roc_glm <- roc(test_data$icu_dead_f, pred_glm)
+
+cat(sprintf("Logistic Regression AUC: %.3f (%.3f-%.3f)\n",
+            auc(roc_glm), ci.auc(roc_glm)[1], ci.auc(roc_glm)[3]))
+```
+
+The first results as baseline is Area Under Curve around 70%.
+
+***
+
+### Decision Tree: C5.0 ALGORITHM
+
+```{r}
+# Train C5.0 decision tree
+set.seed(42)
+model_c50 <- C5.0(
+  icu_dead_f ~ age_icu_exit + gender_num + log_lactate + 
+    log_ck + log_bilirubin + mabp_value_num,
+  data = train_data,
+  rules = FALSE,  # Tree format
+  trials = 1      # Single tree (no boosting)
+)
+
+# Print tree summary
+cat("\nC5.0 Tree Summary:\n")
+summary(model_c50)
+```
+
+```{r}
+# Extract rules
+cat("\n\nDECISION RULES FROM C5.0:\n")
+cat(rep("=", 70), "\n")
+model_c50_rules <- C5.0(
+  icu_dead_f ~ age_icu_exit + gender_num + log_lactate + 
+    log_ck + log_bilirubin + mabp_value_num,
+  data = train_data,
+  rules = TRUE,  # Rule format
+  trials = 1
+)
+
+cat("\n")
+summary(model_c50_rules)
+
+# Predictions
+pred_c50 <- predict(model_c50, test_data, type = "prob")[, "Died"]
+roc_c50 <- roc(test_data$icu_dead_f, pred_c50)
+
+cat(sprintf("\nC5.0 Decision Tree AUC: %.3f (%.3f-%.3f)\n",
+            auc(roc_c50), ci.auc(roc_c50)[1], ci.auc(roc_c50)[3]))
+
+# Variable importance
+c50_importance <- C5imp(model_c50, metric = "usage")
+cat("\nC5.0 Variable Importance (usage-based):\n")
+print(c50_importance)
+```
+
+```{r}
+# Show in notebook
+plot(model_c50)
+
+# Save to file
+png(
+  "../figures/figure14_c50_model_plot.png",
+  width = 8,
+  height = 6,
+  units = "in",
+  res = 300
+)
+plot(model_c50)
+dev.off()
+
+```
+
+
+```{r}
+summary(model_c50_rules)
+```
+
+The C5.0 decision tree generated six interpretable rules that classify ICU patients 
+into survival or death outcomes based on lactate, age, and bilirubin levels. 
+Rules 1-3 identify survival patterns: Rule 1 predicts survival for younger 
+patients (≤76 years) with moderate lactate levels (≤2.26 log mmol/L or ~9.6 mmol/L), 
+covering 11,902 cases with 87.7% accuracy; Rule 2 predicts survival for all patients 
+with low lactate (≤1.36 log mmol/L or ~3.9 mmol/L), the most protective factor 
+covering 14,540 cases with 87.3% accuracy; and Rule 3 combines moderate 
+lactate (≤1.63 log mmol/L or ~5.1 mmol/L) with normal bilirubin 
+(≤1.93 log mg/dL or ~6.9 mg/dL) to predict survival in 15,090 cases with 87.3% accuracy. 
+
+Rules 4-6 identify high-risk mortality patterns: Rule 4 shows that severe hyperlactatemia (>2.26 log mmol/L or >9.6 mmol/L) alone predicts death with 71.3% accuracy and a 4.5-fold lift; Rule 5 identifies elderly patients (>76 years) with elevated lactate (>1.63 log mmol/L or >5.1 mmol/L) as high-risk with 63.0% accuracy and 3.9-fold lift; and Rule 6 reveals that combined elevated lactate (>1.36 log mmol/L or >3.9 mmol/L) with high bilirubin (>1.93 log mg/dL or >6.9 mg/dL) predicts death with 59.9% accuracy and 3.7-fold lift, indicating multi-organ dysfunction. The model achieves 85% overall accuracy on training data, with lactate being the most critical variable (used 100% of the time), followed by bilirubin (91%) and age (73%), demonstrating that lactate thresholds around 4-10 mmol/L are key decision points, with elderly age and hepatic dysfunction significantly modifying mortality risk.
+
+
+***
+
+### Random Forest
+
+```{r}
+# Train Random Forest
+set.seed(42)
+model_rf <- randomForest(
+  icu_dead_f ~ age_icu_exit + gender_num + log_lactate + 
+    log_ck + log_bilirubin + mabp_value_num,
+  data = train_data,
+  ntree = 500,
+  mtry = 3,  # sqrt(6) ≈ 2.5
+  importance = TRUE,
+  nodesize = 5
+)
+
+cat("\nRandom Forest Model:\n")
+print(model_rf)
+
+# Predictions
+pred_rf <- predict(model_rf, test_data, type = "prob")[, "Died"]
+roc_rf <- roc(test_data$icu_dead_f, pred_rf)
+
+cat(sprintf("\nRandom Forest AUC: %.3f (%.3f-%.3f)\n",
+            auc(roc_rf), ci.auc(roc_rf)[1], ci.auc(roc_rf)[3]))
+
+# Variable importance
+cat("\nRandom Forest Variable Importance:\n")
+rf_importance <- importance(model_rf)
+print(rf_importance)
+
+# Plot importance
+varImpPlot(model_rf, 
+           main = "Random Forest Variable Importance",
+           pch = 19,
+           col = "steelblue",
+           cex = 1.2)
+
+png("../figures/figure15_rf_importance.png",
+    width = 10, height = 7, units = "in", res = 300)
+
+varImpPlot(model_rf, 
+           main = "Random Forest Variable Importance",
+           pch = 19,
+           col = "steelblue",
+           cex = 1.2)
+
+dev.off()
+```
+
+
+### LightGBM Gradient Boosting
+
+```{r}
+# Train LightGBM
+
+train_matrix <- model.matrix(icu_dead_f ~ . - icu_dead - 1, data = train_data)
+test_matrix <- model.matrix(icu_dead_f ~ . - icu_dead - 1, data = test_data)
+
+train_labels <- as.numeric(train_data$icu_dead_f == "Died")
+test_labels <- as.numeric(test_data$icu_dead_f == "Died")
+
+# dtest <- lgb.DMatrix(data = test_matrix, label = test_labels)
+
+dtrain <- lgb.Dataset(
+  data = train_matrix,
+  label = train_labels
+)
+
+dtrain <- lgb.Dataset(
+  data = test_matrix,
+  label = test_labels
+)
+
+# LGBoost parameters
+params <- list(
+  objective = "binary",
+  metric = "auc",
+  learning_rate = 0.05,
+  num_leaves = 15,      # similar complexity to C5.0
+  max_depth = 4,
+  min_data_in_leaf = 20,
+  feature_fraction = 0.9,
+  bagging_fraction = 0.8,
+  bagging_freq = 5
+)
+
+
+# Training
+set.seed(42)
+
+model_lgb <- lgb.train(
+  params = params,
+  data = dtrain,
+  nrounds = 300,
+  verbose = -1
+)
+
+
+# Predictions
+pred_lgb <- predict(model_lgb, test_matrix)
+
+roc_obj <- pROC::roc(test_labels, pred_lgb)
+cat(sprintf("Test AUC: %.3f\n", pROC::auc(roc_obj)))
+
+```
+
+
+```{r}
+# Feature importance
+importance_lgb <- lgb.importance(model = model_lgb)
+cat("\nLightGBoost Feature Importance:\n")
+print(importance_lgb)
+
+# Plot importance
+lgb.plot.importance(importance_lgb)
+
+png("../figures/figure16_lgb_importance.png",
+    width = 10, height = 7, units = "in", res = 300)
+lgb.plot.importance(importance_lgb)
+dev.off()
+```
+
+
+### Model Comparison
+
+```{r}
+# Create comparison table
+model_comparison <- data.frame(
+  Model = c("Logistic Regression", "C5.0 Decision Tree", 
+            "Random Forest", "LightGBoost"),
+  AUC = c(auc(roc_glm), auc(roc_c50), auc(roc_rf), auc(roc_obj)),
+  CI_lower = c(ci.auc(roc_glm)[1], ci.auc(roc_c50)[1], 
+               ci.auc(roc_rf)[1], ci.auc(roc_obj)[1]),
+  CI_upper = c(ci.auc(roc_glm)[3], ci.auc(roc_c50)[3], 
+               ci.auc(roc_rf)[3], ci.auc(roc_obj)[3])
+) %>%
+  arrange(desc(AUC)) %>%
+  mutate(
+    AUC_CI = sprintf("%.3f (%.3f-%.3f)", AUC, CI_lower, CI_upper)
+  )
+
+cat("\nModel Performance Comparison:\n")
+print(model_comparison %>% select(Model, AUC_CI), row.names = FALSE)
+
+# Plot ROC curves
+png("../figures/figure17_ml_roc_comparison.png",
+    width = 10, height = 10, units = "in", res = 300)
+
+plot(roc_glm, col = "blue", lwd = 2.5, legacy.axes = TRUE,
+     main = "ROC Curves: Model Comparison",
+     cex.main = 1.5, cex.lab = 1.3)
+plot(roc_c50, col = "green", lwd = 2.5, add = TRUE)
+plot(roc_rf, col = "purple", lwd = 2.5, add = TRUE)
+plot(roc_obj, col = "yellow", lwd = 2.5, add = TRUE)
+
+abline(a = 0, b = 1, lty = 2, col = "gray50", lwd = 1.5)
+
+legend("bottomright",
+       legend = c(
+         sprintf("Logistic Regression (AUC = %.3f)", auc(roc_glm)),
+         sprintf("C5.0 Decision Tree (AUC = %.3f)", auc(roc_c50)),
+         sprintf("Random Forest (AUC = %.3f)", auc(roc_rf)),
+          sprintf("LightGBoost (AUC = %.3f)", auc(roc_obj))
+       ),
+       col = c("blue", "green", "purple", "yellow"),
+       lwd = 2.5,
+       cex = 1.1,
+       bty = "n")
+
+grid(col = "gray", lty = "dotted")
+
+# Save comparison table
+write_csv(model_comparison, "../results/ml_model_comparison.csv")
+```
+
+
+### SHAP Values Analysis (Model Explainability)
+
+
+```{r}
+# Prepare data for SHAP
+test_data_matrix <- test_data %>%
+  select(age_icu_exit, gender_num, log_lactate, 
+         log_ck, log_bilirubin, mabp_value_num) %>%
+  as.matrix()
+
+train_data_matrix <- train_data %>%
+  select(age_icu_exit, gender_num, log_lactate, 
+         log_ck, log_bilirubin, mabp_value_num) %>%
+  as.matrix()
+
+# Calculate SHAP values for LightGBoost
+cat("\nCalculating SHAP values for LightGBoost model...\n")
+shap_lgb <- shapviz(
+  model_lgb,
+  X_pred = test_data_matrix
+)
+
+```
+
+
+```{r}
+# Summary plot
+png("../figures/figure18_shap_summary.png",
+    width = 10, height = 8, units = "in", res = 300)
+
+sv_importance(shap_lgb, kind = "beeswarm")
+
+# Bar plot of mean absolute SHAP values
+png("../figures/figure19_shap_importance_bar.png",
+    width = 10, height = 7, units = "in", res = 300)
+
+sv_importance(shap_lgb, kind = "bar")
+
+# Dependence plots for top features
+png("../figures/figure20_shap_dependence_lactate.png",
+    width = 10, height = 7, units = "in", res = 300)
+
+sv_dependence(shap_lgb, v = "log_lactate", color_var = "auto")
+
+# Get SHAP values as dataframe
+shap_values_df <- as.data.frame(shap_lgb$S)
+colnames(shap_values_df) <- c("age", "gender", "lactate", "ck", "bilirubin", "mabp")
+
+# Calculate mean absolute SHAP values
+shap_importance <- colMeans(abs(shap_values_df)) %>%
+  sort(decreasing = TRUE)
+
+cat("\nMean Absolute SHAP Values (Feature Importance):\n")
+print(round(shap_importance, 4))
+
+# SHAP interpretation
+cat("\n\nSHAP INTERPRETATION:\n")
+cat(rep("=", 70), "\n")
+cat("SHAP values measure each feature's contribution to individual predictions.\n")
+cat("Higher |SHAP| = greater impact on mortality prediction.\n\n")
+
+cat("Key insights:\n")
+cat(sprintf("1. %s has the highest average impact (%.4f)\n",
+            names(shap_importance)[1], shap_importance[1]))
+cat(sprintf("2. %s is second most important (%.4f)\n",
+            names(shap_importance)[2], shap_importance[2]))
+cat(sprintf("3. %s has the least impact (%.4f)\n",
+            names(shap_importance)[length(shap_importance)], 
+            shap_importance[length(shap_importance)]))
+
+cat("\nConclusion: ", names(shap_importance)[1], 
+    " is the most critical predictor across all patients.\n")
+
+```
+
+
+## Feature importance comparison across models
+
+```{r}
+# Combine importance from all models
+importance_combined <- data.frame(
+  Feature = c("age_icu_exit", "gender_num", "log_lactate", 
+              "log_ck", "log_bilirubin", "mabp_value_num"),
+  C50 = c50_importance[,],
+  RandomForest = rf_importance[, "MeanDecreaseGini"],
+  LGBoost = importance_lgb$Gain[match(
+    c("age_icu_exit", "gender_num", "log_lactate", 
+      "log_ck", "log_bilirubin", "mabp_value_num"),
+    importance_lgb$Feature
+  )],
+  SHAP = shap_importance[c("age", "gender", "lactate", "ck", "bilirubin", "mabp")]
+)
+
+# Normalize to 0-100
+importance_normalized <- importance_combined %>%
+  mutate(
+    C50 = C50 / max(C50, na.rm = TRUE) * 100,
+    RandomForest = RandomForest / max(RandomForest) * 100,
+    LGBoost = LGBoost / max(LGBoost) * 100,
+    SHAP = SHAP / max(SHAP) * 100
+  )
+
+cat("\nNormalized Feature Importance (0-100):\n")
+importance_normalized %>%
+  select(-Feature) %>%
+  round(1)
+
+# Save importance comparison
+write_csv(importance_normalized, "../results/feature_importance_comparison.csv")
+
+# Plot comparison
+png("../figures/figure21_importance_comparison.png",
+    width = 12, height = 8, units = "in", res = 300)
+
+importance_long <- importance_normalized %>%
+  pivot_longer(cols = c(C50, RandomForest, LGBoost, SHAP),
+               names_to = "Model",
+               values_to = "Importance") %>%
+  mutate(
+    Feature = case_when(
+      Feature == "age_icu_exit" ~ "Age",
+      Feature == "gender_num" ~ "Gender",
+      Feature == "log_lactate" ~ "Lactate",
+      Feature == "log_ck" ~ "CK",
+      Feature == "log_bilirubin" ~ "Bilirubin",
+      Feature == "mabp_value_num" ~ "MAP"
+    )
+  )
+```
+
+
+
+
+```{r}
+library(ggplot2)
+fig21 <- ggplot(importance_long, aes(x = reorder(Feature, Importance), 
+                            y = Importance, fill = Model)) +
+  geom_col(position = "dodge", alpha = 0.8, color = "black") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Feature Importance Comparison Across Models",
+    subtitle = "Normalized to 100 for comparison",
+    x = "Feature",
+    y = "Relative Importance (%)",
+    fill = "Model"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+fig21
+```
+
+
+```{r include=FALSE}
+ggsave(
+  "../figures/figure21_features_comparison.png",
+  plot = fig21,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
+```
+
+
+### Save the results
+
+```{r}
+ml_results <- list(
+  model_glm = model_glm,
+  model_c50 = model_c50,
+  model_c50_rules = model_c50_rules,
+  model_rf = model_rf,
+  model_lgb = model_lgb,
+  model_comparison = model_comparison,
+  importance_comparison = importance_normalized,
+  shap_values = shap_values_df,
+  test_predictions = data.frame(
+    actual = test_data$icu_dead_f,
+    pred_glm = pred_glm,
+    pred_c50 = pred_c50,
+    pred_rf = pred_rf,
+    pred_lgb = pred_lgb
+  )
+)
+
+save(ml_results, file = "../results/ml_complete_results.RData")
+```
+
+
+***
+
+\newpage
+
+# Conclusions
+
+## Main findings
+
+This study examined the relationship between lactate levels and ICU mortality in 22,302 patients from the MIMIC-III database. The primary analysis used logistic regression to assess whether elevated lactate measurements taken within 24 hours of ICU admission predicted in-hospital death.
+
+Patients who died had higher lactate levels than survivors (median 2.5 vs 1.5 mmol/L). After adjusting for age and sex, each unit increase in log-transformed lactate was associated with a 2.82-fold increase in mortality odds (95% CI: 2.66-3.01). This relationship remained significant even after accounting for other laboratory values including creatinine kinase, bilirubin, and blood pressure.
+
+The study identified a dose-response relationship across three lactate categories. Patients with normal lactate (<2 mmol/L) had 11.2% mortality, those with moderately elevated lactate (2-4 mmol/L) had 15.2% mortality, and patients with severe elevation (>4 mmol/L) had 38.0% mortality. Statistical tests confirmed this progressive increase was not due to chance.
+
+Bootstrap analysis with 1,000 replicates confirmed the stability of these estimates. The Central Limit Theorem demonstration validated that standard statistical methods were appropriate for this dataset, despite lactate values not following a normal distribution.
+
+Age modified the lactate-mortality relationship. The association was strongest in younger patients (<50 years) and weakened progressively in older age groups. This finding suggests lactate elevation may indicate more severe physiological derangement in younger individuals.
+
+## Missing data considerations
+
+A substantial portion of patients lacked measurements for creatinine kinase (59%), bilirubin (57%), and mean arterial pressure (74%). The primary analysis therefore focused on lactate, age, and sex—variables that were complete for all patients. Sensitivity analyses comparing models with and without these additional variables showed consistent lactate effects, suggesting the main findings are robust to missing data.
+
+## Machine Learning considerations
+
+Three machine learning algorithms were compared: C5.0 decision trees, Random Forest, and LightGBM gradient boosting. These models were trained on 75% of the data and tested on the remaining 25%.
+
+### Model performance
+
+LightGBM achieved the highest discrimination (AUC: 0.840, 95% CI: 0.825-0.854), substantially outperforming logistic regression (AUC: 0.694) and other tree-based methods. Random Forest showed intermediate performance (AUC: 0.716), while the simpler C5.0 decision tree had lower discrimination (AUC: 0.600).
+The C5.0 model generated interpretable clinical rules. The most important rule identified that lactate above 9.6 mmol/L predicted death with 71% accuracy. Combining elevated lactate with age over 76 years increased mortality prediction to 63%. These rules aligned with clinical knowledge about lactate thresholds and age-related risk.
+
+Feature importance analysis across all models consistently identified lactate as the strongest predictor. SHAP values, which measure each variable's contribution to individual predictions, confirmed lactate had the highest average impact (1.42), followed by creatinine kinase (1.14) and bilirubin (0.63). Age and blood pressure showed smaller but meaningful contributions.
+
+## Patient clustering
+
+Unsupervised clustering identified three distinct patient phenotypes with different mortality profiles:
+
+* Cluster 1 (591 patients, 21% mortality): Older patients (mean age 70 years) with relatively normal lactate (1.4 mmol/L), low creatinine kinase, and stable blood pressure. This group represented lower-risk elderly admissions.
+
+* Cluster 2 (314 patients, 49% mortality): Patients with severe multi-organ dysfunction, characterized by high lactate (4.1 mmol/L), markedly elevated bilirubin (2.5 mg/dL), and lower blood pressure (74 mmHg). Nearly half of these patients died.
+
+* Cluster 3 (239 patients, 25% mortality): Younger patients (mean age 50 years) with extremely elevated creatinine kinase (1,465 IU/L) but only moderately elevated lactate. This pattern suggested muscle injury such as rhabdomyolysis or trauma rather than systemic hypoperfusion.
+
+These phenotypes demonstrate that elevated lactate has different clinical meanings depending on patient characteristics and associated organ dysfunction.
+
+## Critical gaps in current analysis
+
+
+### Temporal Dynamics
+
+The study analyzed only the first lactate measurement after ICU admission. However, lactate clearance—the rate at which lactate normalizes—is clinically more important than a single value. A patient whose lactate decreases from 8 to 2 mmol/L has a fundamentally different prognosis than one whose lactate remains at 8 mmol/L, even though both started with the same level.
+
+The MIMIC-III database contains serial lactate measurements throughout the first 24 hours. Extracting these values would enable calculation of lactate clearance rates, identification of patients with rising versus falling trajectories, and time-to-normalization analysis. Mixed-effects models or generalized estimating equations could account for repeated measurements within patients.
+
+### Disease Specificity
+
+The current cohort includes all ICU patients regardless of admission diagnosis. Lactate elevation has different causes and prognostic implications across conditions. In septic shock, elevated lactate reflects tissue hypoperfusion and anaerobic metabolism. In seizure patients, it represents increased muscular activity. In liver failure, impaired lactate clearance may predominate over increased production.
+The database contains ICD-9 diagnosis codes that would allow restriction to septic shock patients specifically. This focused analysis would be more clinically relevant and align with the study title. Sepsis-3 criteria could also be approximated using SOFA scores combined with infection indicators.
+
+### Unmeasured Confounding
+
+The analysis lacked critical ICU variables. Severity of illness scores (SOFA, APACHE II) provide validated measures of overall patient acuity. Information about mechanical ventilation, vasopressor administration, and fluid resuscitation would clarify whether lactate predicts mortality independent of these interventions. Admission source (emergency department, operating room, hospital floor) influences baseline risk.
+These variables exist in MIMIC-III tables shown in the database schema but were not extracted for this analysis. Including them would strengthen causal inference and allow comparison of lactate's predictive value against established severity scores.
+
+### Survival Analysis Methods
+
+The study examined ICU mortality as a binary outcome. Survival analysis methods would provide additional insights. Cox proportional hazards models could assess whether elevated lactate accelerates time to death. Kaplan-Meier curves stratified by lactate levels would visualize survival trajectories. Analysis of 28-day mortality—a standard critical care endpoint—would facilitate comparison with published literature.
+Hospital length of stay and ventilator-free days represent important secondary outcomes that measure not just survival but quality of survival. These endpoints could be analyzed using competing risks methods.
+
+
+***
+
+\newpage
+
+# Next Steps
+
+## Recommended statistical enhancements
+
+### Nonlinear modeling
+
+The current analysis categorized lactate into three groups and also modeled it as a continuous variable. However, restricted cubic splines would capture nonlinear dose-response relationships without imposing arbitrary categories. This approach could identify critical thresholds where small increases in lactate lead to large increases in mortality risk.
+
+Such analysis might reveal, for example, that mortality risk increases gradually from 2 to 4 mmol/L but accelerates sharply above 4 mmol/L. This would provide specific targets for clinical intervention.
+
+### Propensity score methods
+
+Patients with elevated lactate differ systematically from those with normal lactate in ways beyond measured confounders. Propensity score matching could create balanced cohorts by pairing each high-lactate patient with a similar normal-lactate patient based on age, sex, and other characteristics.
+Analyzing mortality differences in this matched cohort would provide stronger evidence for a causal relationship between lactate and death, reducing bias from unmeasured confounding.
+
+### Sensitivity analysis
+
+Given substantial missing data for some variables, multiple imputation would test whether findings depend on how missing values are handled. Creating multiple plausible datasets with imputed values and pooling results across them would demonstrate whether the lactate-mortality association is robust or sensitive to missing data assumptions.
+
+### Interaction Analysis
+
+The study identified age as an effect modifier but did not fully characterize this interaction. Formal interaction terms would quantify how much the lactate effect differs across age groups. Similar analyses for sex, organ dysfunction severity, and admission diagnosis would reveal whether lactate is universally prognostic or only in specific subgroups.
+
+### Clinical Utility Metrics
+
+Net reclassification improvement and decision curve analysis would quantify whether adding lactate to risk models improves clinical decision-making. These metrics translate statistical associations into practical benefits for patient care.
+
+* Phase 1: Temporal Analysis
+
+Extract all lactate measurements in the first 24 hours. Calculate clearance rates at 6, 12, and 24 hours. Classify patients as having improving, stable, or worsening trajectories. Test whether clearance predicts mortality independent of initial lactate level.
+
+* Phase 2: Sepsis Cohort
+
+Identify septic shock patients using ICD-9 codes and clinical criteria. Repeat all analyses in this focused population. Compare lactate performance against SOFA scores and other sepsis biomarkers.
+
+* Phase 3: Comprehensive Adjustment
+
+Extract SOFA scores, mechanical ventilation status, vasopressor use, and fluid volumes. Build multivariable models incorporating these confounders. Assess whether lactate provides independent prognostic information.
+
+* Phase 4: Validation
+
+Split data temporally (early years for training, later years for testing). Assess whether models maintain performance in the validation period. Evaluate calibration—whether predicted probabilities match observed mortality rates.
+
+* Phase 5: Clinical Translation
+
+Develop a simplified risk score combining lactate with readily available variables. Create decision thresholds that balance sensitivity and specificity for clinical use. Design implementation strategies for integrating findings into practice.
+
+## Limitations
+
+This retrospective study cannot establish causation. Elevated lactate may directly contribute to mortality, or it may simply mark severe illness. Unmeasured confounding likely remains despite statistical adjustment. The single-center cohort from 2001-2012 may not represent current ICU practice.
+Missing data for several potentially important variables limited multivariable modeling. The analysis focused on all-cause ICU mortality without examining specific mechanisms of death.
+
+
+
+***
+
+\newpage
+
+
+
+## Final thoughts
+
+------------------------------------------------------------------------
+
+\newpage
+
+# References
+
+------------------------------------------------------------------------
