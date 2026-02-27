@@ -3,7 +3,7 @@
 
 ---
 
-## 🔬 Project Overview
+## Project Overview
 
 Are elevated lactate levels within the first 24 hours of ICU admission associated with in-hospital mortality?
 
@@ -11,7 +11,7 @@ This project investigates the prognostic value of early lactate measurements usi
 
 ---
 
-## 🗄 Data Source
+## Data Source
 
 - MIMIC-III v1.4 critical care database  
 - Adult ICU stays  
@@ -25,7 +25,7 @@ Cohort characteristics:
 
 ---
 
-## 🧠 Study Design
+## Study Design
 
 - Retrospective cohort study  
 - Exposure: first lactate measurement within 24 hours  
@@ -35,7 +35,7 @@ Cohort characteristics:
 
 ---
 
-## 🧹 Data Processing
+## Data Processing
 
 - Cohort construction via SQL (CTEs & window functions)  
 - Cleaning of non-numeric and extreme lactate values  
@@ -45,7 +45,7 @@ Cohort characteristics:
 
 ---
 
-## 📊 Exploratory Data Analysis
+## Exploratory Data Analysis
 
 - Distribution of lactate values (log-scale)  
 - Missing value patterns  
@@ -55,7 +55,7 @@ Higher lactate levels were associated with increased mortality rates.
 
 ---
 
-## 📈 Statistical Analysis
+## Statistical Analysis
 
 - Logistic regression modeling  
 - Odds ratio interpretation  
@@ -64,7 +64,7 @@ Higher lactate levels were associated with increased mortality rates.
 
 ---
 
-## 👩‍💻 My Contribution
+## My Contribution
 
 This project was originally developed as part of a collaborative academic assignment.
 
@@ -80,7 +80,7 @@ Other team members contributed to cohort construction, missing data analysis, an
 
 ---
 
-## 🔁 Reproducibility
+## Reproducibility
 
 - SQL extraction scripts included  
 - R scripts for cleaning, EDA, and statistical modeling  
@@ -88,7 +88,7 @@ Other team members contributed to cohort construction, missing data analysis, an
 
 ---
 
-## 🛠 Skills Demonstrated
+## Skills Demonstrated
 
 - Clinical cohort definition  
 - SQL (joins, window functions, CTEs)  
@@ -100,7 +100,7 @@ Other team members contributed to cohort construction, missing data analysis, an
 
 ---
 
-## ⚠ Disclaimer
+## Disclaimer
 
 The MIMIC-III dataset requires credentialed access.  
 No patient-level data is included in this repository.
